@@ -18,12 +18,27 @@ char * pathv[MAX_PATH] = {
   NULL
 };
 
+/*parses input and returns an array of args*/
 char * * get_argv(char * input);
 
-int exec_command(char * argv[]){
+/*tries to execute command (argv[0]) in each path
+of the global path array*/
+int exec_command(char * argv[]);
 
-  /*tries to execute command (argv[0]) in each path
-  of the path array*/
+/*Executes commands 'cd' and 'exit' directly. For any other command,
+process is forked and child executes the command. */
+int run_command(char * argv[]);
+
+/*Send arguments to do_pipe or run_command depending on input*/
+int parse_input(char * ipt);
+
+/*Do piping if a | symbol is detected in parse_input()*/
+int do_pipe(char * head, char * tail);
+
+/*cd implementation*/
+int cd(char * argv[]);
+
+int exec_command(char * argv[]){
   for (int i = 0; pathv[i]; i++){
     int p_sz = strlen(pathv[i]) + strlen(argv[0]) + 1;
     char path[p_sz];
@@ -37,11 +52,8 @@ int exec_command(char * argv[]){
 }
 
 int run_command(char * argv[]){
-/*Executes commands 'cd' and 'exit' directly. For any other command,
-  process is forked and child executes the command. */
-
   /*cd change directory with chdir directly*/
-  printf("run_command: running %s\n", argv[0]);
+  //printf("run_command: running %s\n", argv[0]);
   if (strcmp(argv[0], "cd") == 0){
         if (!argv[1]) chdir(getenv("HOME")); //cd with no args change to home
         else if (chdir(argv[1])) perror("Error");
@@ -67,20 +79,49 @@ int run_command(char * argv[]){
 }
 
 int do_pipe(char * head, char * tail){
-/*TO DO*/
+  char * * argh = get_argv(head);
+//  for (int i = 0; argh[i]; i++) puts(argh[i]);
+  char * * argt = get_argv(tail);
+//  for (int i = 0; argt[i]; i++) puts(argt[i]);
+
+  int ppid = fork();
+  if (ppid){
+    int stat;
+    wait(&stat);
+  }
+  else{
+    int pd[2];
+    pipe(pd);
+
+    int pid = fork();
+
+    /*parent process: READER*/
+    if (pid){
+      int status;
+      waitpid(pid, &status, 0);
+      close(pd[WR_FD]);                 //close writing fd
+      dup2(pd[RD_FD], STDIN_FILENO);   // reader fd overwrites stdin fd
+      close(pd[RD_FD]);
+      exec_command(argt);
+
+    }
+    else{
+      close(pd[RD_FD]); //close reading fd
+      dup2(pd[WR_FD], STDOUT_FILENO);   // reader fd overwrites stdin fd
+      close(pd[WR_FD]);
+      exec_command(argh);
+    }
+  }
 }
 
 int parse_input(char * ipt){
   if (strchr(ipt, '|')){
-    puts("A pipe detected!");
     char * head_end = strchr(ipt, '|');
     * head_end = '\0';
-    puts(ipt);
     do_pipe(ipt, head_end+1);
   }
   else{
     char * * argv = get_argv(ipt);
-    for (int i = 0; argv[i]; i++) puts(argv[i]);
     run_command(argv);
   }
 }
